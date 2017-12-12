@@ -6,7 +6,7 @@
 const int qr_max = 256;
 const int db_max = 256;
 const ap_uint<4> m = 5;
-
+/*
 typedef struct {
 	ap_int<10> h, e;
 } eh_t;
@@ -179,9 +179,8 @@ void ksw_ext2(ap_uint<10> qlen, ap_uint<4> query[qr_max], ap_int<10> tlen,
 	*_max_off = max_off;
 	*_max = max;
 }
+*/
 
-
-/*
 //Maximum Array Size
 #define MAX_SIZE 64
 
@@ -287,5 +286,3 @@ extern "C"{
         }
     }
 }
-
-*/
