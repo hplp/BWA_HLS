@@ -25,7 +25,6 @@ sim/
 syn/
 .autopilot/
 .settings/
+.reference/
 .apc/
-.cproject/
-.project/
 .vivado_hls_log_all.xml
