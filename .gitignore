@@ -26,3 +26,6 @@ syn/
 .autopilot/
 .settings/
 .apc/
+.cproject/
+.project/
+.vivado_hls_log_all.xml
