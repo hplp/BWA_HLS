@@ -18,12 +18,12 @@ lib/
 *_LOCAL_*
 *_REMOTE_*
 *.swp
-VHLS_BWA_SW/solution1/csim/
-VHLS_BWA_SW/solution1/impl/
-VHLS_BWA_SW/solution1/sim/
-VHLS_BWA_SW/solution1/syn/
-VHLS_BWA_SW_test/solution1/csim/
-VHLS_BWA_SW_test/solution1/impl/
-VHLS_BWA_SW_test/solution1/sim/
-VHLS_BWA_SW_test/solution1/syn/
+#VHLS_BWA_SW/solution1/csim/
+#VHLS_BWA_SW/solution1/impl/
+#VHLS_BWA_SW/solution1/sim/
+#VHLS_BWA_SW/solution1/syn/
+#VHLS_BWA_SW_test/solution1/csim/
+#VHLS_BWA_SW_test/solution1/impl/
+#VHLS_BWA_SW_test/solution1/sim/
+#VHLS_BWA_SW_test/solution1/syn/
 
