@@ -23,6 +23,8 @@ csim/
 impl/
 sim/
 syn/
+vivado_hls.app
+solution1.aps
 .autopilot/
 .settings/
 .reference/
