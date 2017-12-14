@@ -30,14 +30,13 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*******************************************************************************
 
 Description: 
-
-    SDx Vector Addition example which showcases the how reordering the loops
-    helps achieve better pipeline initiation interval(II) and better performance.
+ BWA SW host testing code
 
 *******************************************************************************/
 //OpenCL utility layer include
 #include "xcl2.hpp"
 #include <vector>
+
 
 //Array Size to access 
 #define DATA_SIZE 64
