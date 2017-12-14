@@ -19,6 +19,11 @@ lib/
 *_REMOTE_*
 *.swp
 
+Emulation-CPU/
+Emulation-HW/
+.project
+.cproject
+
 csim/
 impl/
 sim/
