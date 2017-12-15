@@ -99,7 +99,7 @@ int main(int argc, char* argv[]) {
 
 	bool all_tests_passed = true;
 	int test_j = 0;
-	for (test_j = 1; test_j <= 33; test_j++) {
+	for (test_j = 1; test_j <= 333; test_j++) {
 		srand(test_j);
 		int o_del = getRandomNumber(2, 5);
 		int e_del = getRandomNumber(2, 5);
