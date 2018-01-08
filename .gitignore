@@ -21,6 +21,7 @@ lib/
 
 Emulation-CPU/
 Emulation-HW/
+System/
 .project
 .cproject
 

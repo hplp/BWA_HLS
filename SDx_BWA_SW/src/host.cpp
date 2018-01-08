@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <ap_int.h>
 
+#include <time.h>
+#include <chrono>
+
 extern "C" {
 #include "bwa.h"
 #include "bwa.c"
@@ -97,6 +100,11 @@ int main(int argc, char* argv[]) {
 	devices.resize(1);
 	cl::Program program(context, devices, bins);
 
+	// This call will extract a kernel out of the program we loaded in the
+	// previous line. A kernel is an OpenCL function that is executed on the
+	// FPGA. This function is defined in the src/ksw_ext2.cl file.
+	cl::Kernel krnl_ksw_ext2(program, "ksw_ext2");
+
 	bool all_tests_passed = true;
 	int test_j = 0;
 	for (test_j = 1; test_j <= 333; test_j++) {
@@ -181,11 +189,6 @@ int main(int argc, char* argv[]) {
 		// DDR memory.
 		q.enqueueMigrateMemObjects(inBufVec, 0/* 0 means from host*/);
 
-		// This call will extract a kernel out of the program we loaded in the
-		// previous line. A kernel is an OpenCL function that is executed on the
-		// FPGA. This function is defined in the src/ksw_ext2.cl file.
-		cl::Kernel krnl_ksw_ext2(program, "ksw_ext2");
-
 		//set the kernel Arguments
 		int narg = 0;
 		krnl_ksw_ext2.setArg(narg++, (ushort) qr_len);
@@ -203,6 +206,7 @@ int main(int argc, char* argv[]) {
 		krnl_ksw_ext2.setArg(narg++, (ushort) h0);
 		krnl_ksw_ext2.setArg(narg++, buffer_m);
 
+		const auto initStartTimeH = std::chrono::high_resolution_clock::now();
 		//Launch the Kernel
 		q.enqueueTask(krnl_ksw_ext2);
 
@@ -211,8 +215,11 @@ int main(int argc, char* argv[]) {
 		// buffer_result cl_mem object to the source_results vector
 		q.enqueueMigrateMemObjects(outBufVec, CL_MIGRATE_MEM_OBJECT_HOST);
 		q.finish();
+		const auto initEndTimeH = std::chrono::high_resolution_clock::now();
+		const auto total_nsH = std::chrono::duration_cast<std::chrono::nanoseconds>(initEndTimeH - initStartTimeH).count();
 
 		struct ResultC RezC;
+		const auto initStartTime = std::chrono::high_resolution_clock::now();
 		RezC.max = -h0
 				+ ksw_extend2(qr_len, (uint8_t*) qr_c, db_len, (uint8_t*) db_c,
 						m, (int8_t*) simat, o_del, e_del, o_ins, e_ins, w,
@@ -221,6 +228,8 @@ int main(int argc, char* argv[]) {
 		printf("C++: max_j=%d max_i=%d max_ie=%d gscore=%d max_off=%d max=%d\n",
 				RezC.max_j, RezC.max_i, RezC.max_ie, RezC.gscore, RezC.max_off,
 				RezC.max);
+		const auto initEndTime = std::chrono::high_resolution_clock::now();
+		const auto total_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(initEndTime - initStartTime).count();
 		delete[] db_c;
 		delete[] qr_c;
 		delete[] simat;
@@ -228,6 +237,8 @@ int main(int argc, char* argv[]) {
 		printf("HLS: max_j=%d max_i=%d max_ie=%d gscore=%d max_off=%d max=%d\n",
 				source_m[0], source_m[1], source_m[2], source_m[3], source_m[4],
 				source_m[5] - h0);
+		std::cout << "C++ total_ns: " << total_ns << "\n";
+		std::cout << "HLS total_ns: " << total_nsH << "\n";
 		if ((RezC.max == (int) (source_m[5] - h0))
 				&& (RezC.max_j == (int) source_m[0])
 				&& (RezC.max_i == (int) source_m[1])
