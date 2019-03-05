@@ -12,3 +12,4 @@ Folders:
 
 The implementation has been tested successfully on a local machine with ADM-PCIE-KU3 board and on an AWS F1 machine.
 
+Resuming the project soon with full implementation
