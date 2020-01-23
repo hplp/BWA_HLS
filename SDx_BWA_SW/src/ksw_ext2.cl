@@ -2,15 +2,14 @@
 #define QR_MAX 256
 #define DB_MAX 256
 // Configure size of the similarity matrix
-const ushort m = 5;
+__constant ushort m = 5;
 
 typedef struct {
 	short h, e;
 } eh_t;
 
 // Similarity function implementation
-short similarity(ushort a, ushort b, ushort match, ushort mismatch,
-		ushort ambiguous) {
+short similarity(ushort a, ushort b, ushort match, ushort mismatch, ushort ambiguous) {
 #pragma HLS inline
 	if ((a == m - 1) || (b == m - 1)) {
 		return 0 - ambiguous;
@@ -22,11 +21,8 @@ short similarity(ushort a, ushort b, ushort match, ushort mismatch,
 
 kernel __attribute__((reqd_work_group_size(1, 1, 1)))
 // ksw_extend2_hls algorithm
-void ksw_ext2(const ushort qlen, global const uchar* source_q,
-		const ushort tlen, global const uchar* source_t, const ushort match,
-		const ushort mismatch, const ushort ambiguous, const ushort o_del,
-		const ushort e_del, const ushort o_ins, const ushort e_ins,
-		const ushort w, const ushort h0, global short* buffer_m) {
+void ksw_ext2(const ushort qlen, global const uchar* source_q, const ushort tlen, global const uchar* source_t, const ushort match, const ushort mismatch,
+		const ushort ambiguous, const ushort o_del, const ushort e_del, const ushort o_ins, const ushort e_ins, const ushort w, const ushort h0, global short* buffer_m) {
 	uchar query[QR_MAX];
 	uchar target[DB_MAX];
 
@@ -47,8 +43,7 @@ void ksw_ext2(const ushort qlen, global const uchar* source_q,
 	//		match, mismatch, ambiguous, o_del, e_del, o_ins, e_ins, w, h0);
 
 	ushort i, oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
-	short beg = 0, end = qlen, max = h0, max_i = -1, max_j = -1, max_ie = -1,
-			gscore = -1, max_off = 0, eh_h_prev;
+	short beg = 0, end = qlen, max = h0, max_i = -1, max_j = -1, max_ie = -1, gscore = -1, max_off = 0, eh_h_prev;
 	bool break_i = false;
 
 	// VivadoHLS synthesizes arrays as BRAM
@@ -172,15 +167,13 @@ void ksw_ext2(const ushort qlen, global const uchar* source_q,
 		}
 
 		// update beg and end for the next round
-		LOOP_beg: for (j = beg; (j < end) && eh[j].h == 0 && eh[j].e == 0;
-				++j) {
+		LOOP_beg: for (j = beg; (j < end) && eh[j].h == 0 && eh[j].e == 0; ++j) {
 #pragma HLS dependence variable=eh inter false
 #pragma HLS PIPELINE
 		}
 		beg = j;
 
-		LOOP_end: for (j = end; (j >= beg) && eh[j].h == 0 && eh[j].e == 0;
-				--j) {
+		LOOP_end: for (j = end; (j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j) {
 #pragma HLS dependence variable=eh inter false
 #pragma HLS PIPELINE
 		}
