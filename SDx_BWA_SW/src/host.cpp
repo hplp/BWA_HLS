@@ -1,7 +1,19 @@
+/********************************************************************************************
+ * This host file will interface with the ksw_ext2 FPGA kernel via HBM and DRAM
+ * Additionally, it will compare the results with the original C code
+ * from here: https://github.com/lh3/bwa/blob/master/ksw.c
+ *
+ * One of the goals is to evaluate kernel performance, CPU vs FPGA
+ * Another goal is to evaluate HBM performance
+ *
+ *  *****************************************************************************************/
 #include "xcl2.hpp"
 
 #include <stdio.h>
 #include <ap_int.h>
+
+#include <vector>
+using std::vector;
 
 #include <time.h>
 #include <chrono>
@@ -10,9 +22,6 @@ extern "C" {
 #include "bwa.h"
 #include "bwa.c"
 }
-
-#include <vector>
-using std::vector;
 
 //Number of HBM Banks required
 #define MAX_HBM_BANKCOUNT 32
@@ -27,11 +36,11 @@ BANK_NAME(16), BANK_NAME(17), BANK_NAME(18), BANK_NAME(19), BANK_NAME(20), BANK_
 
 BANK_NAME(24), BANK_NAME(25), BANK_NAME(26), BANK_NAME(27), BANK_NAME(28), BANK_NAME(29), BANK_NAME(30), BANK_NAME(31) };
 
-static const int qr_max = 256;
-static const int db_max = 256;
-static const int r_vars = 6;
-static const int m = 5;
-static const int smlen = m * m;
+static const unsigned int qr_max = 256;
+static const unsigned int db_max = 256;
+static const unsigned int r_vars = 6;
+static const unsigned int m = 5;
+static const unsigned int smlen = m * m;
 
 int getRandomNumber(int min, int max) {
 	return (rand() % (max - min + 1)) + min;
@@ -57,18 +66,8 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
-	std::string binaryFile = argv[1];
 	cl_int err;
-
-	// Creates the vectors to be sent / returned
-	vector<ap_uint<4>, aligned_allocator<ap_uint<4>>> source_q(qr_max);
-	vector<ap_uint<4>, aligned_allocator<ap_uint<4>>> source_t(db_max);
-	vector<short, aligned_allocator<short>> source_m(r_vars);
-
-	// Compute the size of array in bytes
-	size_t size_in_bytes_q = qr_max * sizeof(ap_uint<4> );
-	size_t size_in_bytes_t = db_max * sizeof(ap_uint<4> );
-	size_t size_in_bytes_m = r_vars * sizeof(short);
+	std::string binaryFile = argv[1];
 
 	// The get_xil_devices will return vector of Xilinx Devices
 	auto devices = xcl::get_xil_devices();
@@ -77,6 +76,7 @@ int main(int argc, char **argv) {
 	//Creating Context and Command Queue for selected Device
 	OCL_CHECK(err, cl::Context context(device, NULL, NULL, NULL, &err));
 	OCL_CHECK(err, cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err));
+
 	OCL_CHECK(err, std::string device_name = device.getInfo<CL_DEVICE_NAME>(&err));
 	std::cout << "Found Device=" << device_name.c_str() << std::endl;
 
@@ -85,22 +85,40 @@ int main(int argc, char **argv) {
 	// and it can contain many functions which can be executed on the
 	// device.
 	auto fileBuf = xcl::read_binary_file(binaryFile);
+
 	cl::Program::Binaries bins { { fileBuf.data(), fileBuf.size() } };
 	devices.resize(1);
 	OCL_CHECK(err, cl::Program program(context, devices, bins, NULL, &err));
-
-	// These commands will allocate memory on the FPGA. The cl::Buffer objects can
-	// be used to reference the memory locations on the device. The cl::Buffer
-	// object cannot be referenced directly and must be passed to other OpenCL
-	// functions.
-	OCL_CHECK(err, cl::Buffer buffer_q(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, size_in_bytes_q, source_q.data(), &err));
-	OCL_CHECK(err, cl::Buffer buffer_t(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, size_in_bytes_t, source_t.data(), &err));
-	OCL_CHECK(err, cl::Buffer buffer_m(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, size_in_bytes_m, source_m.data(), &err));
-
 	// This call will extract a kernel out of the program we loaded in the
 	// previous line. A kernel is an OpenCL function that is executed on the
 	// FPGA. This function is defined in the src/ksw_ext2.cl file.
 	OCL_CHECK(err, cl::Kernel krnl_ksw_ext2(program, "ksw_ext2", &err));
+
+	// Creates the vectors to be sent / returned
+	vector<int, aligned_allocator<int>> source_q(qr_max);
+	vector<int, aligned_allocator<int>> source_t(db_max);
+	vector<int, aligned_allocator<int>> source_m(r_vars);
+
+	const int numBuf = 3;
+	int bank_assign[numBuf];
+	for (int j = 0; j < numBuf; j++) {
+		bank_assign[j] = bank[j];
+	}
+	// For Allocating Buffer to specific Global Memory Bank, user has to use cl_mem_ext_ptr_t and provide the Banks
+	cl_mem_ext_ptr_t BufExt_q, BufExt_t, BufExt_m;
+
+	// Compute the size of array in bytes
+	size_t size_in_bytes_q = qr_max * sizeof(uint32_t);
+	size_t size_in_bytes_t = db_max * sizeof(uint32_t);
+	size_t size_in_bytes_m = r_vars * sizeof(uint32_t);
+
+//	// These commands will allocate memory on the FPGA. The cl::Buffer objects can
+//	// be used to reference the memory locations on the device. The cl::Buffer
+//	// object cannot be referenced directly and must be passed to other OpenCL
+//	// functions.
+//	OCL_CHECK(err, cl::Buffer buffer_q(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, size_in_bytes_q, source_q.data(), &err));
+//	OCL_CHECK(err, cl::Buffer buffer_t(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, size_in_bytes_t, source_t.data(), &err));
+//	OCL_CHECK(err, cl::Buffer buffer_m(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, size_in_bytes_m, source_m.data(), &err));
 
 	bool all_tests_passed = true;
 	int test_j = 0;
@@ -123,39 +141,47 @@ int main(int argc, char **argv) {
 		int db_qr_element;
 
 		// generate db
+		printf("H %d db_len: ", db_len);
 		uint8_t* db_c = new uint8_t[db_max];
-		for (int i = 0; i < db_max; i++) {
-			if (i < db_len) {
+		for (unsigned int i = 0; i < db_max; i++) {
+			if (i < (unsigned int) db_len) {
 				db_qr_element = getRandomCharacter();
 			} else {
 				db_qr_element = 0;
 			}
-			source_t[i] = (ap_uint<4> ) db_qr_element;
+//			source_t[i] = (ap_uint<4> ) db_qr_element;
+			source_t[i] = db_qr_element;
 			db_c[i] = (uint8_t) db_qr_element;
+			printf("%d ", source_t[i]);
 		}
+		printf("\n");
 
 		// generate qr
+		printf("Ht %d qr_len: ", qr_len);
 		uint8_t* qr_c = new uint8_t[qr_max];
-		for (int i = 0; i < qr_max; i++) {
-			if (i < qr_len) {
+		for (unsigned int i = 0; i < qr_max; i++) {
+			if (i < (unsigned int) qr_len) {
 				db_qr_element = getRandomCharacter();
 			} else {
 				db_qr_element = 0;
 			}
-			source_q[i] = (ap_uint<4> ) db_qr_element;
+//			source_q[i] = (ap_uint<4> ) db_qr_element;
+			source_q[i] = db_qr_element;
 			qr_c[i] = (uint8_t) db_qr_element;
+			printf("%d ", source_q[i]);
 		}
+		printf("\n");
 
 		//declare the similarity matrix
 		int8_t* simat = new int8_t[smlen]; // similarity matrix pointer
 		int ij = 0;
-		for (int i = 0; i < m - 1; ++i) {
-			for (int j = 0; j < m - 1; ++j) {
+		for (unsigned int i = 0; i < m - 1; ++i) {
+			for (unsigned int j = 0; j < m - 1; ++j) {
 				simat[ij++] = i == j ? match : -mismatch;
 			}
 			simat[ij++] = -ambiguous; // ambiguous base
 		}
-		for (int j = 0; j < m; ++j) {
+		for (unsigned int j = 0; j < m; ++j) {
 			simat[ij++] = -ambiguous;
 		}
 
@@ -173,36 +199,59 @@ int main(int argc, char **argv) {
 		wh = wh < max_del ? wh : max_del; // TODO: is this necessary?
 		/**************************************************/
 
-		printf("test %d: db_len=%d qr_len=%d w=%d match=%d mismatch=%d ambiguous=%d o_del=%d e_del=%d o_ins=%d e_ins=%d end_bonus=%d\n", test_j, db_len, qr_len, w,
-				match, -mismatch, -ambiguous, o_del, e_del, o_ins, e_ins, end_bonus);
+		printf("test %d: db_len=%d qr_len=%d match=%d mismatch=%d ambiguous=%d o_del=%d e_del=%d o_ins=%d e_ins=%d w=%d end_bonus=%d\n", test_j, db_len, qr_len, match,
+				-mismatch, -ambiguous, o_del, e_del, o_ins, e_ins, w, end_bonus);
+
+		BufExt_q.obj = source_q.data();
+		BufExt_q.param = 0;
+		BufExt_q.flags = bank_assign[0];
+
+		BufExt_t.obj = source_t.data();
+		BufExt_t.param = 0;
+		BufExt_t.flags = bank_assign[1];
+
+		BufExt_m.obj = source_m.data();
+		BufExt_m.param = 0;
+		BufExt_m.flags = bank_assign[2];
+
+		// These commands will allocate memory on the FPGA. The cl::Buffer objects can
+		// be used to reference the memory locations on the device. The cl::Buffer
+		// object cannot be referenced directly and must be passed to other OpenCL
+		// functions.
+		//OCL_CHECK(err, cl::Buffer buffer_q(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, sizeof(uint32_t) * size, &inBufExt1, &err));
+		OCL_CHECK(err, cl::Buffer buffer_q(context, CL_MEM_USE_HOST_PTR | CL_MEM_EXT_PTR_XILINX | CL_MEM_READ_ONLY, size_in_bytes_q, &BufExt_q, &err));
+		OCL_CHECK(err, cl::Buffer buffer_t(context, CL_MEM_USE_HOST_PTR | CL_MEM_EXT_PTR_XILINX | CL_MEM_READ_ONLY, size_in_bytes_t, &BufExt_t, &err));
+		OCL_CHECK(err, cl::Buffer buffer_m(context, CL_MEM_USE_HOST_PTR | CL_MEM_EXT_PTR_XILINX | CL_MEM_WRITE_ONLY, size_in_bytes_m, &BufExt_m, &err));
+
+		//set the kernel Arguments
+		int narg = 0;
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) qr_len));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, buffer_q));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) db_len));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, buffer_t));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) match));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) mismatch));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) ambiguous));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) o_del));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) e_del));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) o_ins));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) e_ins));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) w));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) h0));
+		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, buffer_m));
 
 		// These commands will load the source_a and source_b vectors from the host
 		// application and into the buffer_a and buffer_b cl::Buffer objects. The data
 		// will be be transferred from system memory over PCIe to the FPGA on-board
 		// DDR memory.
 		OCL_CHECK(err, err = q.enqueueMigrateMemObjects( { buffer_q, buffer_t }, 0 /* 0 means from host*/));
-
-		//set the kernel Arguments
-		int narg = 0;
-		krnl_ksw_ext2.setArg(narg++, (ushort) qr_len);
-		krnl_ksw_ext2.setArg(narg++, buffer_q);
-		krnl_ksw_ext2.setArg(narg++, (ushort) db_len);
-		krnl_ksw_ext2.setArg(narg++, buffer_t);
-		krnl_ksw_ext2.setArg(narg++, (ushort) match);
-		krnl_ksw_ext2.setArg(narg++, (ushort) mismatch);
-		krnl_ksw_ext2.setArg(narg++, (ushort) ambiguous);
-		krnl_ksw_ext2.setArg(narg++, (ushort) o_del);
-		krnl_ksw_ext2.setArg(narg++, (ushort) e_del);
-		krnl_ksw_ext2.setArg(narg++, (ushort) o_ins);
-		krnl_ksw_ext2.setArg(narg++, (ushort) e_ins);
-		krnl_ksw_ext2.setArg(narg++, (ushort) w);
-		krnl_ksw_ext2.setArg(narg++, (ushort) h0);
-		krnl_ksw_ext2.setArg(narg++, buffer_m);
+		q.finish();
 
 		const auto initStartTimeH = std::chrono::high_resolution_clock::now();
 		//Launch the Kernel
-		q.enqueueTask(krnl_ksw_ext2);
+		//q.enqueueTask(krnl_ksw_ext2);
 		OCL_CHECK(err, err = q.enqueueTask(krnl_ksw_ext2));
+		q.finish();
 
 		// The result of the previous kernel execution will need to be retrieved in
 		// order to view the results. This call will write the data from the
@@ -239,5 +288,5 @@ int main(int argc, char **argv) {
 	if (all_tests_passed)
 		printf("All %d tests have passed\n", test_j - 1);
 	printf("_END_ \n\n");
-	return (all_tests_passed ? EXIT_FAILURE : EXIT_SUCCESS);
+	return (all_tests_passed ? EXIT_SUCCESS : EXIT_FAILURE);
 }
