@@ -21,25 +21,25 @@ short similarity(ushort a, ushort b, ushort match, ushort mismatch, ushort ambig
 
 kernel __attribute__((reqd_work_group_size(1, 1, 1)))
 // ksw_extend2_hls algorithm
-void ksw_ext2(const ushort qlen, global const unsigned int* source_q, const ushort tlen, global const unsigned int* source_t, const ushort match, const ushort mismatch,
+void ksw_ext2(const ushort qlen, global const uchar* source_q, const ushort tlen, global const uchar* source_t, const ushort match, const ushort mismatch,
 		const ushort ambiguous, const ushort o_del, const ushort e_del, const ushort o_ins, const ushort e_ins, const ushort w, const ushort h0, global int* buffer_m) {
 
 	uchar query[QR_MAX];
 	uchar target[DB_MAX];
 
-	printf("CL %d query: ", qlen);
-	readQ: for (int i = 0; i < qlen; i++) {
+//	printf("CL %d query: ", qlen);
+	readQ: for (ushort i = 0; i < qlen; i++) {
 		query[i] = source_q[i];
-		printf("%d ", query[i]);
+//		printf("%d ", query[i]);
 	}
-	printf("\n");
-	printf("CL %d target: ", tlen);
-	readT: for (int i = 0; i < tlen; i++) {
+//	printf("\n");
+//	printf("CL %d target: ", tlen);
+	readT: for (ushort i = 0; i < tlen; i++) {
 		target[i] = source_t[i];
-		printf("%d ", target[i]);
+//		printf("%d ", target[i]);
 	}
-	printf("CLt \n");
-	printf("match=%d mismatch=-%d ambiguous=-%d o_del=%d e_del=%d o_ins=%d e_ins=%d w=%d h0=%d\n", match, mismatch, ambiguous, o_del, e_del, o_ins, e_ins, w, h0);
+//	printf("CLt \n");
+//	printf("match=%d mismatch=-%d ambiguous=-%d o_del=%d e_del=%d o_ins=%d e_ins=%d w=%d h0=%d\n", match, mismatch, ambiguous, o_del, e_del, o_ins, e_ins, w, h0);
 
 	ushort i, oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
 	short beg = 0, end = qlen, max = h0, max_i = -1, max_j = -1, max_ie = -1, gscore = -1, max_off = 0, eh_h_prev;

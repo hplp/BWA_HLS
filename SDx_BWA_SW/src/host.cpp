@@ -10,10 +10,8 @@
 #include "xcl2.hpp"
 
 #include <stdio.h>
-#include <ap_int.h>
 
 #include <vector>
-using std::vector;
 
 #include <time.h>
 #include <chrono>
@@ -23,9 +21,12 @@ extern "C" {
 #include "bwa.c"
 }
 
+#define NUM_KERNEL 2
+
 //Number of HBM Banks required
 #define MAX_HBM_BANKCOUNT 32
 #define BANK_NAME(n) n | XCL_MEM_TOPOLOGY
+
 const int bank[MAX_HBM_BANKCOUNT] = {
 
 BANK_NAME(0), BANK_NAME(1), BANK_NAME(2), BANK_NAME(3), BANK_NAME(4), BANK_NAME(5), BANK_NAME(6), BANK_NAME(7),
@@ -46,8 +47,8 @@ int getRandomNumber(int min, int max) {
 	return (rand() % (max - min + 1)) + min;
 }
 
-int getRandomCharacter() {
-	return rand() % m;
+uint8_t getRandomCharacter() {
+	return (uint8_t) rand() % m;
 }
 
 struct ResultC {
@@ -60,69 +61,79 @@ struct ResultC {
 };
 
 int main(int argc, char **argv) {
-
 	if (argc != 2) {
-		std::cout << "Usage: " << argv[0] << " <XCLBIN File>" << std::endl;
+		printf("Usage: %s <XCLBIN> \n", argv[0]);
 		return EXIT_FAILURE;
 	}
 
-	cl_int err;
 	std::string binaryFile = argv[1];
+	cl_int err;
 
 	// The get_xil_devices will return vector of Xilinx Devices
 	auto devices = xcl::get_xil_devices();
 	auto device = devices[0];
 
-	//Creating Context and Command Queue for selected Device
+	// Creating Context and Command Queue for selected Device
 	OCL_CHECK(err, cl::Context context(device, NULL, NULL, NULL, &err));
-	OCL_CHECK(err, cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err));
+	OCL_CHECK(err, cl::CommandQueue q(context, device, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_PROFILING_ENABLE, &err));
 
 	OCL_CHECK(err, std::string device_name = device.getInfo<CL_DEVICE_NAME>(&err));
 	std::cout << "Found Device=" << device_name.c_str() << std::endl;
 
-	// read_binary() command will find the OpenCL binary file created using the
-	// xocc compiler load into OpenCL Binary and return a pointer to file buffer
-	// and it can contain many functions which can be executed on the
-	// device.
+	// Run read_binary_file() to find OpenCL binary file created using xocc compiler & return pointer to file buffer
 	auto fileBuf = xcl::read_binary_file(binaryFile);
 
+	// Manage Program and Kernel
 	cl::Program::Binaries bins { { fileBuf.data(), fileBuf.size() } };
 	devices.resize(1);
 	OCL_CHECK(err, cl::Program program(context, devices, bins, NULL, &err));
-	// This call will extract a kernel out of the program we loaded in the
-	// previous line. A kernel is an OpenCL function that is executed on the
-	// FPGA. This function is defined in the src/ksw_ext2.cl file.
-	OCL_CHECK(err, cl::Kernel krnl_ksw_ext2(program, "ksw_ext2", &err));
 
-	// Creates the vectors to be sent / returned
-	vector<int, aligned_allocator<int>> source_q(qr_max);
-	vector<int, aligned_allocator<int>> source_t(db_max);
-	vector<int, aligned_allocator<int>> source_m(r_vars);
+	// OCL_CHECK(err, cl::Kernel krnl_ksw_ext2(program, "ksw_ext2", &err));
 
-	const int numBuf = 3;
-	int bank_assign[numBuf];
-	for (int j = 0; j < numBuf; j++) {
-		bank_assign[j] = bank[j];
+	// Creating Kernel Vector of Compute Units
+	std::string krnl_name = "ksw_ext2";
+	std::vector<cl::Kernel> krnls(NUM_KERNEL);
+
+	for (int i = 0; i < NUM_KERNEL; i++) {
+		std::string cu_id = std::to_string(i + 1);
+		std::string krnl_name_full = krnl_name + ":{" + "ksw_ext2_" + cu_id + "}";
+
+		printf("Creating a kernel [%s] for CU(%d)\n", krnl_name_full.c_str(), i + 1);
+
+		//Here Kernel object is created by specifying kernel name along with compute unit.
+		//For such case, this kernel object can only access the specific Compute unit
+
+		OCL_CHECK(err, krnls[i] = cl::Kernel(program, krnl_name_full.c_str(), &err));
 	}
-	// For Allocating Buffer to specific Global Memory Bank, user has to use cl_mem_ext_ptr_t and provide the Banks
-	cl_mem_ext_ptr_t BufExt_q, BufExt_t, BufExt_m;
+
+	// Vectors communicating with kernel
+	std::vector<uint8_t, aligned_allocator<uint8_t>> source_q(qr_max);
+	std::vector<uint8_t, aligned_allocator<uint8_t>> source_t(db_max);
+
+	//std::vector<int, aligned_allocator<int>> result_m(r_vars);
+	std::vector<int, aligned_allocator<int>> result_m[NUM_KERNEL];
+	for (int i = 0; i < NUM_KERNEL; i++) {
+		result_m[i].resize(r_vars);
+		fill(result_m[i].begin(), result_m[i].end(), 0);
+	}
 
 	// Compute the size of array in bytes
-	size_t size_in_bytes_q = qr_max * sizeof(uint32_t);
-	size_t size_in_bytes_t = db_max * sizeof(uint32_t);
-	size_t size_in_bytes_m = r_vars * sizeof(uint32_t);
+//	size_t size_in_bytes_q = qr_max * sizeof(uint8_t);
+//	size_t size_in_bytes_t = db_max * sizeof(uint8_t);
+//	size_t size_in_bytes_m = r_vars * sizeof(uint32_t);
 
-//	// These commands will allocate memory on the FPGA. The cl::Buffer objects can
-//	// be used to reference the memory locations on the device. The cl::Buffer
-//	// object cannot be referenced directly and must be passed to other OpenCL
-//	// functions.
-//	OCL_CHECK(err, cl::Buffer buffer_q(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, size_in_bytes_q, source_q.data(), &err));
-//	OCL_CHECK(err, cl::Buffer buffer_t(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, size_in_bytes_t, source_t.data(), &err));
-//	OCL_CHECK(err, cl::Buffer buffer_m(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, size_in_bytes_m, source_m.data(), &err));
+	// Use cl_mem_ext_ptr_t to allocate buffers to specific Global Memory Bank Banks
+	std::vector<cl_mem_ext_ptr_t> BufExt_q(NUM_KERNEL);
+	std::vector<cl_mem_ext_ptr_t> BufExt_t(NUM_KERNEL);
+	std::vector<cl_mem_ext_ptr_t> BufExt_m(NUM_KERNEL);
+
+	std::vector<cl::Buffer> buffer_q(NUM_KERNEL);
+	std::vector<cl::Buffer> buffer_t(NUM_KERNEL);
+	std::vector<cl::Buffer> buffer_m(NUM_KERNEL);
 
 	bool all_tests_passed = true;
-	int test_j = 0;
-	for (test_j = 1; test_j <= 333; test_j++) {
+	unsigned int test_j = 0;
+	for (test_j = 100; test_j <= 1; test_j++) {
 		srand(test_j);
 		int o_del = getRandomNumber(2, 5);
 		int e_del = getRandomNumber(2, 5);
@@ -138,7 +149,7 @@ int main(int argc, char **argv) {
 		int w = getRandomNumber(1, 100);
 		int h0 = getRandomNumber(qr_max / 2, qr_max);
 
-		int db_qr_element;
+		uint8_t db_qr_element;
 
 		// generate db
 		printf("H %d db_len: ", db_len);
@@ -149,9 +160,8 @@ int main(int argc, char **argv) {
 			} else {
 				db_qr_element = 0;
 			}
-//			source_t[i] = (ap_uint<4> ) db_qr_element;
 			source_t[i] = db_qr_element;
-			db_c[i] = (uint8_t) db_qr_element;
+			db_c[i] = db_qr_element;
 			printf("%d ", source_t[i]);
 		}
 		printf("\n");
@@ -165,9 +175,8 @@ int main(int argc, char **argv) {
 			} else {
 				db_qr_element = 0;
 			}
-//			source_q[i] = (ap_uint<4> ) db_qr_element;
 			source_q[i] = db_qr_element;
-			qr_c[i] = (uint8_t) db_qr_element;
+			qr_c[i] = db_qr_element;
 			printf("%d ", source_q[i]);
 		}
 		printf("\n");
@@ -202,61 +211,77 @@ int main(int argc, char **argv) {
 		printf("test %d: db_len=%d qr_len=%d match=%d mismatch=%d ambiguous=%d o_del=%d e_del=%d o_ins=%d e_ins=%d w=%d end_bonus=%d\n", test_j, db_len, qr_len, match,
 				-mismatch, -ambiguous, o_del, e_del, o_ins, e_ins, w, end_bonus);
 
-		BufExt_q.obj = source_q.data();
-		BufExt_q.param = 0;
-		BufExt_q.flags = bank_assign[0];
+		for (int i = 0; i < NUM_KERNEL; i++) {
+			BufExt_q[i].obj = source_q.data();
+			BufExt_q[i].param = 0;
+			BufExt_q[i].flags = bank[i * 3 + 0];
 
-		BufExt_t.obj = source_t.data();
-		BufExt_t.param = 0;
-		BufExt_t.flags = bank_assign[1];
+			BufExt_t[i].obj = source_t.data();
+			BufExt_t[i].param = 0;
+			BufExt_t[i].flags = bank[i * 3 + 1];
 
-		BufExt_m.obj = source_m.data();
-		BufExt_m.param = 0;
-		BufExt_m.flags = bank_assign[2];
+			BufExt_m[i].obj = result_m[i].data();
+			BufExt_m[i].param = 0;
+			BufExt_m[i].flags = bank[i * 3 + 2];
+		}
 
 		// These commands will allocate memory on the FPGA. The cl::Buffer objects can
 		// be used to reference the memory locations on the device. The cl::Buffer
 		// object cannot be referenced directly and must be passed to other OpenCL
 		// functions.
 		//OCL_CHECK(err, cl::Buffer buffer_q(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, sizeof(uint32_t) * size, &inBufExt1, &err));
-		OCL_CHECK(err, cl::Buffer buffer_q(context, CL_MEM_USE_HOST_PTR | CL_MEM_EXT_PTR_XILINX | CL_MEM_READ_ONLY, size_in_bytes_q, &BufExt_q, &err));
-		OCL_CHECK(err, cl::Buffer buffer_t(context, CL_MEM_USE_HOST_PTR | CL_MEM_EXT_PTR_XILINX | CL_MEM_READ_ONLY, size_in_bytes_t, &BufExt_t, &err));
-		OCL_CHECK(err, cl::Buffer buffer_m(context, CL_MEM_USE_HOST_PTR | CL_MEM_EXT_PTR_XILINX | CL_MEM_WRITE_ONLY, size_in_bytes_m, &BufExt_m, &err));
-
-		//set the kernel Arguments
-		int narg = 0;
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) qr_len));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, buffer_q));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) db_len));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, buffer_t));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) match));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) mismatch));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) ambiguous));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) o_del));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) e_del));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) o_ins));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) e_ins));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) w));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, (ushort ) h0));
-		OCL_CHECK(err, err = krnl_ksw_ext2.setArg(narg++, buffer_m));
+		for (int i = 0; i < NUM_KERNEL; i++) {
+			printf("i=%d %d %d \n", i, (int) buffer_q.size(), (int) buffer_t.size());
+			OCL_CHECK(err,
+					buffer_q[i] = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, qr_max * sizeof(uint8_t), &BufExt_q[i], &err));
+			OCL_CHECK(err,
+					buffer_t[i] = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, db_max * sizeof(uint8_t), &BufExt_t[i], &err));
+			OCL_CHECK(err,
+					buffer_m[i] = cl::Buffer(context, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, r_vars * sizeof(uint32_t), &BufExt_m[i], &err));
+		}
 
 		// These commands will load the source_a and source_b vectors from the host
 		// application and into the buffer_a and buffer_b cl::Buffer objects. The data
 		// will be be transferred from system memory over PCIe to the FPGA on-board
 		// DDR memory.
-		OCL_CHECK(err, err = q.enqueueMigrateMemObjects( { buffer_q, buffer_t }, 0 /* 0 means from host*/));
+		for (int i = 0; i < NUM_KERNEL; i++) {
+			OCL_CHECK(err, err = q.enqueueMigrateMemObjects( { buffer_q[i], buffer_t[i] }, 0 /* 0 means from host*/));
+		}
 		q.finish();
+
+		for (int i = 0; i < NUM_KERNEL; i++) {
+			//set the kernel Arguments
+			int narg = 0;
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) qr_len));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, buffer_q[i]));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) db_len));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, buffer_t[i]));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) match));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) mismatch));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) ambiguous));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) o_del));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) e_del));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) o_ins));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) e_ins));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) w));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, (ushort ) h0));
+			OCL_CHECK(err, err = krnls[i].setArg(narg++, buffer_m[i]));
+		}
 
 		const auto initStartTimeH = std::chrono::high_resolution_clock::now();
 		//Launch the Kernel
 		//q.enqueueTask(krnl_ksw_ext2);
-		OCL_CHECK(err, err = q.enqueueTask(krnl_ksw_ext2));
+		for (int i = 0; i < NUM_KERNEL; i++) {
+			OCL_CHECK(err, err = q.enqueueTask(krnls[i]));
+		}
 		q.finish();
 
 		// The result of the previous kernel execution will need to be retrieved in
 		// order to view the results. This call will write the data from the
 		// buffer_result cl_mem object to the source_results vector
-		OCL_CHECK(err, err = q.enqueueMigrateMemObjects({buffer_m}, CL_MIGRATE_MEM_OBJECT_HOST));
+		for (int i = 0; i < NUM_KERNEL; i++) {
+			OCL_CHECK(err, err = q.enqueueMigrateMemObjects({buffer_m[i]}, CL_MIGRATE_MEM_OBJECT_HOST));
+		}
 		q.finish();
 
 		const auto initEndTimeH = std::chrono::high_resolution_clock::now();
@@ -274,11 +299,12 @@ int main(int argc, char **argv) {
 		delete[] simat;
 
 		printf("C++: max_j=%d max_i=%d max_ie=%d gscore=%d max_off=%d max=%d\n", RezC.max_j, RezC.max_i, RezC.max_ie, RezC.gscore, RezC.max_off, RezC.max);
-		printf("HLS: max_j=%d max_i=%d max_ie=%d gscore=%d max_off=%d max=%d\n", source_m[0], source_m[1], source_m[2], source_m[3], source_m[4], source_m[5] - h0);
+		printf("HLS: max_j=%d max_i=%d max_ie=%d gscore=%d max_off=%d max=%d\n", result_m[0][0], result_m[0][1], result_m[0][2], result_m[0][3], result_m[0][4],
+				result_m[0][5] - h0);
 		std::cout << "C++ total_ns: " << total_ns << "\n";
 		std::cout << "HLS total_ns: " << total_nsH << "\n";
-		if ((RezC.max == (int) (source_m[5] - h0)) && (RezC.max_j == (int) source_m[0]) && (RezC.max_i == (int) source_m[1]) && (RezC.max_ie == (int) source_m[2])
-				&& (RezC.gscore == (int) source_m[3]) && (RezC.max_off == (int) source_m[4])) {
+		if ((RezC.max == (int) (result_m[0][5] - h0)) && (RezC.max_j == (int) result_m[0][0]) && (RezC.max_i == (int) result_m[0][1])
+				&& (RezC.max_ie == (int) result_m[0][2]) && (RezC.gscore == (int) result_m[0][3]) && (RezC.max_off == (int) result_m[0][4])) {
 			printf("test %d passed\n\n", test_j);
 		} else {
 			printf("test %d failed\n\n", test_j);
