@@ -214,15 +214,15 @@ int main(int argc, char **argv) {
 		for (int i = 0; i < NUM_KERNEL; i++) {
 			BufExt_q[i].obj = source_q.data();
 			BufExt_q[i].param = 0;
-			BufExt_q[i].flags = bank[i * 3 + 0];
+			BufExt_q[i].flags = bank[i];
 
 			BufExt_t[i].obj = source_t.data();
 			BufExt_t[i].param = 0;
-			BufExt_t[i].flags = bank[i * 3 + 1];
+			BufExt_t[i].flags = bank[i];
 
 			BufExt_m[i].obj = result_m[i].data();
 			BufExt_m[i].param = 0;
-			BufExt_m[i].flags = bank[i * 3 + 2];
+			BufExt_m[i].flags = bank[i];
 		}
 
 		// These commands will allocate memory on the FPGA. The cl::Buffer objects can
