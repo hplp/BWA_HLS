@@ -36,3 +36,14 @@ solution1.aps
 .reference/
 .apc/
 .vivado_hls_log_all.xml
+
+SDx_BWA_SW/_x.hw.xilinx_u280_xdma_201910_1/
+SDx_BWA_SW/_x.hw_emu.xilinx_u280_xdma_201910_1/
+SDx_BWA_SW/_x.sw_emu.xilinx_u280_xdma_201910_1/
+SDx_BWA_SW/host
+SDx_BWA_SW/libs/
+SDx_BWA_SW/profile_summary.csv
+SDx_BWA_SW/profile_summary.html
+SDx_BWA_SW/xclbin.run_summary
+SDx_BWA_SW/xrt.ini
+
