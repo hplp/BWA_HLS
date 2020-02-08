@@ -46,4 +46,5 @@ SDx_BWA_SW/profile_summary.csv
 SDx_BWA_SW/profile_summary.html
 SDx_BWA_SW/xclbin.run_summary
 SDx_BWA_SW/xrt.ini
-
+SDx_BWA_SW/.run/
+sdx_pid8790.str
