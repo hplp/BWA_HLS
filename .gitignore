@@ -41,7 +41,7 @@ SDx_BWA_SW/_x.hw.xilinx_u280_xdma_201910_1/
 SDx_BWA_SW/_x.hw_emu.xilinx_u280_xdma_201910_1/
 SDx_BWA_SW/_x.sw_emu.xilinx_u280_xdma_201910_1/
 SDx_BWA_SW/host
-SDx_BWA_SW/libs/
+libs/
 SDx_BWA_SW/profile_summary.csv
 SDx_BWA_SW/profile_summary.html
 SDx_BWA_SW/xclbin.run_summary
