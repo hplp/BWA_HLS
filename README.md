@@ -14,3 +14,6 @@ Folders:
 The implementation has been tested successfully on a local machine with ADM-PCIE-KU3 board, on an AWS F1 machine, and on a local machine with the Alveo U280 card.
 
 Note: The Alveo U280 implementation requires a few Xilinx SDAccel from https://github.com/Xilinx/SDAccel_Examples/tree/master/libs.
+
+Link to AACBB 2018 presentation:
+ - https://aacbb-workshop.github.io/slides/2018/aacbb-serg-presi.pdf
